@@ -6,6 +6,9 @@
 #include <cstdlib>
 #include <chrono>
 #include <iomanip>
+#include <fstream>
+#include <string>
+#include <sstream>
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true)
@@ -68,16 +71,9 @@ void Body::setColor(uint8_t r, uint8_t g, uint8_t b) {
 	this->color = new uint8_t[3]{ r, g, b };
 }
 
-__device__ bool status_printed = false;
-
 __global__
 void step(Body* bodiesIn, Body* results, int n, float dt) {
-	const int i = threadIdx.x;
-	if(i == 0 && !status_printed){
-		status_printed = true;
-		printf("GPU Kernel started\n");
-	}
-	if (i < n) {
+	for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += blockDim.x * gridDim.x){
 		Body a = bodiesIn[i];
 		float EPS = 3e4;
 		float G = 1.0;
@@ -110,13 +106,12 @@ void step(Body* bodiesIn, Body* results, int n, float dt) {
 
 		results[i] = a;
 	}
+	
 }
 
 __global__
 void prepareForNextStep(Body* bodiesIn, Body* results, int n) {
-	const int i = threadIdx.x;
-
-	if (i < n) {
+	for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += blockDim.x * gridDim.x){
 		bodiesIn[i] = results[i];
 	}
 }
@@ -132,15 +127,20 @@ public:
 	void stepSimulation(float dt);
 	Body getBody(int index);
 	void cleanup();
+	void enableFrameRecord();
 
 private:
 	unsigned int currentStep;
 	unsigned int maxBodies;
 	unsigned int numBodies;
 	int numThreads;
+	int numSMs;
+	bool recordFrames;
 	Body* bodies;
 	Body* inBodies;
 	Body* resBodies;
+	std::ofstream recordFile;
+	void recordFrame();
 };
 
 Simulation::Simulation(unsigned int maxBodies, const int numThreads) {
@@ -149,6 +149,10 @@ Simulation::Simulation(unsigned int maxBodies, const int numThreads) {
 	this->numBodies = 0;
 	this->currentStep = 0;
 	this->numThreads = numThreads;
+	this->recordFrames = false;
+	this->numSMs = 0;
+
+	cudaDeviceGetAttribute(&numSMs, cudaDevAttrMultiProcessorCount, 0);
 }
 
 void Simulation::addBody(Body b) {
@@ -168,17 +172,20 @@ void Simulation::addBody(vec3 position, vec3 velocity, float mass, float radius)
 
 void Simulation::stepSimulation(float dt) {
 	if (currentStep == 0) {
-		step<<< 1, numThreads >>>(inBodies, resBodies, numBodies, 1.0);
+		step<<< 32 * numSMs, numThreads >>>(inBodies, resBodies, numBodies, 1.0);
 		gpuErrchk(cudaPeekAtLastError());
 		gpuErrchk(cudaDeviceSynchronize());
 		currentStep++;
 	}
 	else {
-		prepareForNextStep<<< 1, numThreads >>>(inBodies, resBodies, numBodies);
-		step<<< 1, numThreads >>>(inBodies, resBodies, numBodies, 1.0);
+		prepareForNextStep<<< 32*numSMs, numThreads >>>(inBodies, resBodies, numBodies);
+		step<<< 32*numSMs, numThreads >>>(inBodies, resBodies, numBodies, 1.0);
 		gpuErrchk(cudaPeekAtLastError());
 		gpuErrchk(cudaDeviceSynchronize());
 		currentStep++;
+	}
+	if(recordFrames){
+		recordFrame();
 	}
 }
 
@@ -207,13 +214,50 @@ void Simulation::cleanup() {
 
 }
 
+void Simulation::enableFrameRecord(){
+	int err = system("rm -r frames");
+	if (-1 == err)
+	{
+    	printf("Error creating directory!n");
+    	exit(1);
+	}
+
+	err = system("mkdir -p frames");
+	if (-1 == err)
+	{
+    	printf("Error creating directory!n");
+    	exit(1);
+	}
+
+	recordFrames = true;
+}
+
+void Simulation::recordFrame(){
+	readBodiesFromDevice();
+	std::stringstream num;
+	num << "frames/" << currentStep << ".bdat";
+	recordFile.open(num.str().c_str());
+
+	if(recordFile.is_open()){
+	for(int l = 0; l < maxBodies; l++){
+		Body b = this->getBody(l);
+		float px = b.position.x;
+		float py = b.position.y;
+		float pz = b.position.z;
+		recordFile << l << " " << px << " " << py << " " << pz << " " << "\n";
+	}
+	}
+	recordFile.flush();
+	recordFile.close();
+}
 
 int main(int argc, char** argv) {
 	int maxBodies = 1000;
 	int threads = 256;
 	int cycles = 1000;
+	bool record = false;
 
-	if(argc == 4){
+	if(argc >= 4){
 	std::cout << "Starting simulation with " << atoi(argv[1]) << " bodies and " << atoi(argv[2]) << " threads" << std::endl;
 		maxBodies = atoi(argv[1]);
 		threads = atoi(argv[2]);
@@ -223,7 +267,15 @@ int main(int argc, char** argv) {
 		std::cout << "No parameters given, starting with 1000 bodies running on 256 threads" << std::endl;
 	}
 
+	if(argc == 5 && atoi(argv[4]) == 1){
+		std::cout << "Enabled data recording, frame data will be stored in the 'frames' directory" << std::endl;
+		record = true;
+	}
+
 	Simulation* sim = new Simulation(maxBodies, threads);
+	if(record){
+	sim -> enableFrameRecord();
+	}
 	srand(time(NULL));
 
 	for (int i = 0; i < maxBodies; i++) {
@@ -274,7 +326,7 @@ int main(int argc, char** argv) {
 	vec3 bpos = b.position;
 
 	std::cout << "x-" << bpos.x << " y-" << bpos.y << " z-" << bpos.z << std::endl;
-	std::cout << totalBodies << " bodies processed (total over " << maxBodies << " cycles) in " << elapsed_seconds << " seconds (" << (long)rate << " bodies per second)" << std::endl;
+	std::cout << totalBodies << " bodies processed (total over " << cycles << " cycles) in " << elapsed_seconds << " seconds (" << (long)rate << " bodies per second)" << std::endl;
 
 	sim->cleanup();
 	return 0;

@@ -1,4 +1,3 @@
-#pragma once
 #include <cstdint>
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -69,10 +68,15 @@ void Body::setColor(uint8_t r, uint8_t g, uint8_t b) {
 	this->color = new uint8_t[3]{ r, g, b };
 }
 
+__device__ bool status_printed = false;
+
 __global__
 void step(Body* bodiesIn, Body* results, int n, float dt) {
 	const int i = threadIdx.x;
-
+	if(i == 0 && !status_printed){
+		status_printed = true;
+		printf("GPU Kernel started\n");
+	}
 	if (i < n) {
 		Body a = bodiesIn[i];
 		float EPS = 3e4;
@@ -211,9 +215,9 @@ int main(int argc, char** argv) {
 
 	if(argc == 4){
 	std::cout << "Starting simulation with " << atoi(argv[1]) << " bodies and " << atoi(argv[2]) << " threads" << std::endl;
-	int maxBodies = atoi(argv[1]);
-	int threads = atoi(argv[2]);
-	int cycles = atoi(argv[3]);
+		maxBodies = atoi(argv[1]);
+		threads = atoi(argv[2]);
+		cycles = atoi(argv[3]);
 	}
 	else{
 		std::cout << "No parameters given, starting with 1000 bodies running on 256 threads" << std::endl;
@@ -234,7 +238,7 @@ int main(int argc, char** argv) {
 		vel.y = 0;
 		vel.z = 0;
 		
-		sim->addBody(pos, vel, 10000000 - rand() % 1000, 100);
+		sim->addBody(pos, vel, 1000000 - rand() % 1000, 100);
 	}
 
 	std::cout << "Bodies added, moving to gpu memory" << std::endl;
@@ -256,10 +260,11 @@ int main(int argc, char** argv) {
 	}
 	auto finish = std::chrono::high_resolution_clock::now();
 	long long elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(finish - start).count();
-	float elapsed_seconds = elapsed / 1000000000.0;
-	float rate = (float)(cycles * maxBodies) / elapsed_seconds;
+	double elapsed_seconds = elapsed / 1000000000.0;
+	long long rate = (long long)(cycles * maxBodies) / elapsed_seconds;
+	long long totalBodies = cycles * maxBodies;
 
-	std::cout << "1000 steps done, " << elapsed_seconds << " seconds elapsed, reading results" << std::endl;
+	std::cout << cycles << " cycles done, " << elapsed_seconds << " seconds elapsed, reading results" << std::endl;
 
 	sim->readBodiesFromDevice();
 
@@ -269,7 +274,7 @@ int main(int argc, char** argv) {
 	vec3 bpos = b.position;
 
 	std::cout << "x-" << bpos.x << " y-" << bpos.y << " z-" << bpos.z << std::endl;
-	std::cout << cycles * maxBodies << " bodies processed in " << elapsed_seconds << " seconds (" << rate << " bodies per second)" << std::endl;
+	std::cout << totalBodies << " bodies processed (total over " << maxBodies << " cycles) in " << elapsed_seconds << " seconds (" << (long)rate << " bodies per second)" << std::endl;
 
 	sim->cleanup();
 	return 0;

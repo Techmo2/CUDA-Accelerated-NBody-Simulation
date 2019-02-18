@@ -113,7 +113,7 @@ void step(Body* bodiesIn, Body* results, int n, float dt) {
 */
 
 __global__
-void calc_forces(Body* bodies, int n, float dt){
+void calc_forces(Body* bodies, int n, float dt, float G){
 	for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += blockDim.x * gridDim.x){
 		Body a = bodies[i];
 
@@ -139,9 +139,9 @@ void calc_forces(Body* bodies, int n, float dt){
 			}
 		}
 
-		a.force.x = fx;
-		a.force.y = fy;
-		a.force.z = fz;
+		bodies[i].force.x = fx;
+		bodies[i].force.y = fy;
+		bodies[i].force.z = fz;
 	}
 }
 
@@ -156,6 +156,8 @@ void move_bodies(Body* bodies, int n, float dt){
 		a.position.x += dt * a.velocity.x;
 		a.position.y += dt * a.velocity.y;
 		a.position.z += dt * a.velocity.z;
+
+		bodies[i] = a;
 	}
 }
 
@@ -171,7 +173,7 @@ void prepareForNextStep(Body* bodiesIn, Body* results, int n) {
 
 class Simulation {
 public:
-	Simulation(unsigned int maxBodies, const int numThreads);
+	Simulation(unsigned int maxBodies, const int numThreads, float G);
 	void addBody(Body b);
 	void addBody(vec3 position, vec3 velocity, float mass, float radius);
 	void sendBodiesToDevice();
@@ -185,6 +187,7 @@ private:
 	unsigned int currentStep;
 	unsigned int maxBodies;
 	unsigned int numBodies;
+	float G;
 	int numThreads;
 	int numSMs;
 	bool recordFrames;
@@ -194,7 +197,7 @@ private:
 	void recordFrame();
 };
 
-Simulation::Simulation(unsigned int maxBodies, const int numThreads) {
+Simulation::Simulation(unsigned int maxBodies, const int numThreads, float G) {
 	this->maxBodies = maxBodies;
 	this->bodies = new Body[maxBodies];
 	this->numBodies = 0;
@@ -202,6 +205,7 @@ Simulation::Simulation(unsigned int maxBodies, const int numThreads) {
 	this->numThreads = numThreads;
 	this->recordFrames = false;
 	this->numSMs = 0;
+	this->G = G;
 
 	cudaDeviceGetAttribute(&numSMs, cudaDevAttrMultiProcessorCount, 0);
 }
@@ -237,7 +241,7 @@ void Simulation::stepSimulation(float dt) {
 		currentStep++;
 	}*/
 
-	calc_forces<<< 32 * numSMs, numThreads >>>(inBodies, numBodies, 1.0);
+	calc_forces<<< 32 * numSMs, numThreads >>>(inBodies, numBodies, 1.0, this->G);
 	gpuErrchk(cudaPeekAtLastError());
 	move_bodies<<< 32 * numSMs, numThreads >>>(inBodies, numBodies, 1.0);
 	gpuErrchk(cudaPeekAtLastError());
@@ -317,6 +321,7 @@ int main(int argc, char** argv) {
 	int threads = 256;
 	int cycles = 1000;
 	bool record = false;
+	float g = 10;
 
 	if(argc >= 4){
 	std::cout << "Starting simulation with " << atoi(argv[1]) << " bodies and " << atoi(argv[2]) << " threads" << std::endl;
@@ -333,7 +338,7 @@ int main(int argc, char** argv) {
 		record = true;
 	}
 
-	Simulation* sim = new Simulation(maxBodies, threads);
+	Simulation* sim = new Simulation(maxBodies, threads, g);
 	if(record){
 	sim -> enableFrameRecord();
 	}

@@ -31,6 +31,7 @@ public:
 	bool blank;
 	vec3 position;
 	vec3 velocity;
+	vec3 force;
 	float mass;
 	float radius;
 	uint8_t* color;
@@ -71,6 +72,7 @@ void Body::setColor(uint8_t r, uint8_t g, uint8_t b) {
 	this->color = new uint8_t[3]{ r, g, b };
 }
 
+/*
 __global__
 void step(Body* bodiesIn, Body* results, int n, float dt) {
 	for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += blockDim.x * gridDim.x){
@@ -108,13 +110,63 @@ void step(Body* bodiesIn, Body* results, int n, float dt) {
 	}
 	
 }
+*/
 
+__global__
+void calc_forces(Body* bodies, int n, float dt){
+	for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += blockDim.x * gridDim.x){
+		Body a = bodies[i];
+
+		float EPS = 3e4;
+		float G = 1.0;
+		float fx = 0;
+		float fy = 0;
+		float fz = 0;
+
+		for (int j = 0; j < n; j++) {
+			if (j != i) {
+				Body b = bodies[j];
+
+				float dx = b.position.x - a.position.x;
+				float dy = b.position.y - a.position.y;
+				float dz = b.position.z - a.position.z;
+				float dist = sqrt(dx*dx + dy*dy + dz*dz);
+
+				float F = (G * a.mass * b.mass) / (dist * dist + EPS * EPS);
+				fx += F * dx / dist;
+				fy += F * dy / dist;
+				fz += F * dz / dist;
+			}
+		}
+
+		a.force.x = fx;
+		a.force.y = fy;
+		a.force.z = fz;
+	}
+}
+
+__global__
+void move_bodies(Body* bodies, int n, float dt){
+	for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += blockDim.x * gridDim.x){
+		Body a = bodies[i];
+
+		a.velocity.x += dt * a.force.x / a.mass;
+		a.velocity.y += dt * a.force.y / a.mass;
+		a.velocity.z += dt * a.force.z / a.mass;
+		a.position.x += dt * a.velocity.x;
+		a.position.y += dt * a.velocity.y;
+		a.position.z += dt * a.velocity.z;
+	}
+}
+
+/*
 __global__
 void prepareForNextStep(Body* bodiesIn, Body* results, int n) {
 	for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += blockDim.x * gridDim.x){
 		bodiesIn[i] = results[i];
 	}
 }
+*/
 
 
 class Simulation {
@@ -138,7 +190,6 @@ private:
 	bool recordFrames;
 	Body* bodies;
 	Body* inBodies;
-	Body* resBodies;
 	std::ofstream recordFile;
 	void recordFrame();
 };
@@ -171,6 +222,7 @@ void Simulation::addBody(vec3 position, vec3 velocity, float mass, float radius)
 }
 
 void Simulation::stepSimulation(float dt) {
+	/*
 	if (currentStep == 0) {
 		step<<< 32 * numSMs, numThreads >>>(inBodies, resBodies, numBodies, 1.0);
 		gpuErrchk(cudaPeekAtLastError());
@@ -183,7 +235,17 @@ void Simulation::stepSimulation(float dt) {
 		gpuErrchk(cudaPeekAtLastError());
 		gpuErrchk(cudaDeviceSynchronize());
 		currentStep++;
-	}
+	}*/
+
+	calc_forces<<< 32 * numSMs, numThreads >>>(inBodies, numBodies, 1.0);
+	gpuErrchk(cudaPeekAtLastError());
+	move_bodies<<< 32 * numSMs, numThreads >>>(inBodies, numBodies, 1.0);
+	gpuErrchk(cudaPeekAtLastError());
+
+	gpuErrchk(cudaDeviceSynchronize());
+
+	currentStep++;
+
 	if(recordFrames){
 		recordFrame();
 	}
@@ -193,13 +255,12 @@ void Simulation::stepSimulation(float dt) {
 // Copy bodies from bodies array to gpu, and allocate space for result bodies on gpu
 void Simulation::sendBodiesToDevice() {
 	cudaMalloc(&inBodies, sizeof(Body) * maxBodies);
-	cudaMalloc(&resBodies, sizeof(Body) * maxBodies);
 	cudaMemcpy(inBodies, bodies, sizeof(Body) * maxBodies, cudaMemcpyHostToDevice);
 }
 
 // Copy current simulation step from gpu to bodies array
 void Simulation::readBodiesFromDevice() {
-	cudaMemcpy(bodies, resBodies, sizeof(Body) * maxBodies, cudaMemcpyDeviceToHost);
+	cudaMemcpy(bodies, inBodies, sizeof(Body) * maxBodies, cudaMemcpyDeviceToHost);
 }
 
 Body Simulation::getBody(int index) {
@@ -294,13 +355,13 @@ int main(int argc, char** argv) {
 	}
 
 	std::cout << "Bodies added, moving to gpu memory" << std::endl;
-	std::cout << "6th body: ";
+	//std::cout << "6th body: ";
 
-	std::cout << std::fixed;
-	std::cout << std::setprecision(2);
+	//std::cout << std::fixed;
+	//std::cout << std::setprecision(2);
 
-	Body c = sim->getBody(5);
-	std::cout << " x-" << c.position.x << " y-" << c.position.y << " z-" << c.position.z << std::endl;
+	//Body c = sim->getBody(5);
+	//std::cout << " x-" << c.position.x << " y-" << c.position.y << " z-" << c.position.z << std::endl;
 
 	sim->sendBodiesToDevice();
 
@@ -320,12 +381,12 @@ int main(int argc, char** argv) {
 
 	sim->readBodiesFromDevice();
 
-	std::cout << "6th result: ";
+	//std::cout << "6th result: ";
 
-	Body b = sim->getBody(5);
-	vec3 bpos = b.position;
+	//Body b = sim->getBody(5);
+	//vec3 bpos = b.position;
 
-	std::cout << "x-" << bpos.x << " y-" << bpos.y << " z-" << bpos.z << std::endl;
+	//std::cout << "x-" << bpos.x << " y-" << bpos.y << " z-" << bpos.z << std::endl;
 	std::cout << totalBodies << " bodies processed (total over " << cycles << " cycles) in " << elapsed_seconds << " seconds (" << (long)rate << " bodies per second)" << std::endl;
 
 	sim->cleanup();

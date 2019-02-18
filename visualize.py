@@ -2,6 +2,7 @@ from glumpy import app, gloo, gl
 import os
 
 scalar = 10000
+framedir = "build/frames"
 
 window = app.Window()
 vertex = """
@@ -31,16 +32,16 @@ fragment = """
 data_files = []
 
 print("Loading body frame data")
-if not os.path.isdir("./frames"):
+if not os.path.isdir(framedir):
     print("No frame data files detected")
     print("Run the simulation with '1' as the 4th argument to save the frame data")
     exit(0)
 
-path, dirs, files = os.walk("./frames").__next__()
+path, dirs, files = os.walk(framedir).__next__()
 num_frames = len(files)
 
 for i in range(num_frames):
-    with open("./frames/" + files[i]) as f:
+    with open(framedir + "/" + files[i]) as f:
         content = [x.strip().split(" ") for x in f.readlines()]
         data_files.append(content)
 print("Loaded", len(data_files), "frames(", len(data_files[0]) * len(data_files), "vertices)")

@@ -1,0 +1,3 @@
+/home/bradly/Desktop/CUDA-Accelerated-NBody-Simulation/build/CMakeFiles/rebuild_cache.dir
+/home/bradly/Desktop/CUDA-Accelerated-NBody-Simulation/build/CMakeFiles/simulation.dir
+/home/bradly/Desktop/CUDA-Accelerated-NBody-Simulation/build/CMakeFiles/edit_cache.dir

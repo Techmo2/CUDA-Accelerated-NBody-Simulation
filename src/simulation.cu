@@ -294,13 +294,6 @@ int main(int argc, char** argv) {
 	}
 
 	std::cout << "Bodies added, moving to gpu memory" << std::endl;
-	//std::cout << "6th body: ";
-
-	//std::cout << std::fixed;
-	//std::cout << std::setprecision(2);
-
-	//Body c = sim->getBody(5);
-	//std::cout << " x-" << c.position.x << " y-" << c.position.y << " z-" << c.position.z << std::endl;
 
 	sim->sendBodiesToDevice();
 
@@ -319,13 +312,7 @@ int main(int argc, char** argv) {
 	std::cout << cycles << " cycles done, " << elapsed_seconds << " seconds elapsed, reading results" << std::endl;
 
 	sim->readBodiesFromDevice();
-
-	//std::cout << "6th result: ";
-
-	//Body b = sim->getBody(5);
-	//vec3 bpos = b.position;
-
-	//std::cout << "x-" << bpos.x << " y-" << bpos.y << " z-" << bpos.z << std::endl;
+	
 	std::cout << totalBodies << " bodies processed (total over " << cycles << " cycles) in " << elapsed_seconds << " seconds (" << (long)rate << " bodies per second)" << std::endl;
 
 	sim->cleanup();

@@ -10,7 +10,7 @@
 #include <string>
 #include <sstream>
 
-#define PRECISION float
+#define PRECISION double
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true)
@@ -23,9 +23,9 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
 }
 
 typedef struct {
-	float x;
-	float y;
-	float z;
+	PRECISION x;
+	PRECISION y;
+	PRECISION z;
 } vec3;
 
 class Body {
@@ -34,12 +34,12 @@ public:
 	vec3 position;
 	vec3 velocity;
 	vec3 force;
-	float mass;
-	float radius;
+	PRECISION mass;
+	PRECISION radius;
 	uint8_t* color;
 	Body();
-	Body(vec3 position, float mass, float radius);
-	Body(vec3 position, vec3 velocity, float mass, float radius);
+	Body(vec3 position, PRECISION mass, PRECISION radius);
+	Body(vec3 position, vec3 velocity, PRECISION mass, PRECISION radius);
 	void setColor(uint8_t r, uint8_t g, uint8_t b);
 };
 
@@ -47,7 +47,7 @@ Body::Body() {
 	this->blank = true;
 }
 
-Body::Body(vec3 position, float mass, float radius) {
+Body::Body(vec3 position, PRECISION mass, PRECISION radius) {
 	vec3 vel;
 	vel.x = 0;
 	vel.y = 0;
@@ -61,7 +61,7 @@ Body::Body(vec3 position, float mass, float radius) {
 	this->blank = false;
 }
 
-Body::Body(vec3 position, vec3 velocity, float mass, float radius) {
+Body::Body(vec3 position, vec3 velocity, PRECISION mass, PRECISION radius) {
 	this->position = position;
 	this->velocity = velocity;
 	this->mass = mass;
@@ -74,67 +74,27 @@ void Body::setColor(uint8_t r, uint8_t g, uint8_t b) {
 	this->color = new uint8_t[3]{ r, g, b };
 }
 
-/*
 __global__
-void step(Body* bodiesIn, Body* results, int n, float dt) {
-	for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += blockDim.x * gridDim.x){
-		Body a = bodiesIn[i];
-		float EPS = 3e4;
-		float G = 1.0;
-		float fx = 0;
-		float fy = 0;
-		float fz = 0;
-
-		for (int j = 0; j < n; j++) {
-			if (j != i) {
-				Body b = bodiesIn[j];
-
-				float dx = b.position.x - a.position.x;
-				float dy = b.position.y - a.position.y;
-				float dz = b.position.z - a.position.z;
-				float dist = sqrt(dx*dx + dy*dy + dz*dz);
-
-				float F = (G * a.mass * b.mass) / (dist * dist + EPS * EPS);
-				fx += F * dx / dist;
-				fy += F * dy / dist;
-				fz += F * dz / dist;
-			}
-		}
-
-		a.velocity.x += dt * fx / a.mass;
-		a.velocity.y += dt * fy / a.mass;
-		a.velocity.z += dt * fz / a.mass;
-		a.position.x += dt * a.velocity.x;
-		a.position.y += dt * a.velocity.y;
-		a.position.z += dt * a.velocity.z;
-
-		results[i] = a;
-	}
-	
-}
-*/
-
-__global__
-void calc_forces(Body* bodies, int n, float dt, float G){
+void calc_forces(Body* bodies, int n, PRECISION dt, PRECISION G){
 	for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += blockDim.x * gridDim.x){
 		Body a = bodies[i];
 
-		float EPS = 3e4;
-		float G = 1.0;
-		float fx = 0;
-		float fy = 0;
-		float fz = 0;
+		PRECISION EPS = 3e4;
+		PRECISION G = 1.0;
+		PRECISION fx = 0;
+		PRECISION fy = 0;
+		PRECISION fz = 0;
 
 		for (int j = 0; j < n; j++) {
 			if (j != i) {
 				Body b = bodies[j];
 
-				float dx = b.position.x - a.position.x;
-				float dy = b.position.y - a.position.y;
-				float dz = b.position.z - a.position.z;
-				float dist = sqrt(dx*dx + dy*dy + dz*dz);
+				PRECISION dx = b.position.x - a.position.x;
+				PRECISION dy = b.position.y - a.position.y;
+				PRECISION dz = b.position.z - a.position.z;
+				PRECISION dist = sqrt(dx*dx + dy*dy + dz*dz);
 
-				float F = (G * a.mass * b.mass) / (dist * dist + EPS * EPS);
+				PRECISION F = (G * a.mass * b.mass) / (dist * dist + EPS * EPS);
 				fx += F * dx / dist;
 				fy += F * dy / dist;
 				fz += F * dz / dist;
@@ -148,7 +108,7 @@ void calc_forces(Body* bodies, int n, float dt, float G){
 }
 
 __global__
-void move_bodies(Body* bodies, int n, float dt){
+void move_bodies(Body* bodies, int n, PRECISION dt){
 	for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += blockDim.x * gridDim.x){
 		Body a = bodies[i];
 
@@ -163,24 +123,14 @@ void move_bodies(Body* bodies, int n, float dt){
 	}
 }
 
-/*
-__global__
-void prepareForNextStep(Body* bodiesIn, Body* results, int n) {
-	for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += blockDim.x * gridDim.x){
-		bodiesIn[i] = results[i];
-	}
-}
-*/
-
-
 class Simulation {
 public:
-	Simulation(unsigned int maxBodies, const int numThreads, float G);
+	Simulation(unsigned int maxBodies, const int numThreads, PRECISION G);
 	void addBody(Body b);
-	void addBody(vec3 position, vec3 velocity, float mass, float radius);
+	void addBody(vec3 position, vec3 velocity, PRECISION mass, PRECISION radius);
 	void sendBodiesToDevice();
 	void readBodiesFromDevice();
-	void stepSimulation(float dt);
+	void stepSimulation(PRECISION dt);
 	Body getBody(int index);
 	void cleanup();
 	void enableFrameRecord();
@@ -189,7 +139,7 @@ private:
 	unsigned int currentStep;
 	unsigned int maxBodies;
 	unsigned int numBodies;
-	float G;
+	PRECISION G;
 	int numThreads;
 	int numSMs;
 	bool recordFrames;
@@ -199,7 +149,7 @@ private:
 	void recordFrame();
 };
 
-Simulation::Simulation(unsigned int maxBodies, const int numThreads, float G) {
+Simulation::Simulation(unsigned int maxBodies, const int numThreads, PRECISION G) {
 	this->maxBodies = maxBodies;
 	this->bodies = new Body[maxBodies];
 	this->numBodies = 0;
@@ -220,28 +170,14 @@ void Simulation::addBody(Body b) {
 	
 }
 
-void Simulation::addBody(vec3 position, vec3 velocity, float mass, float radius) {
+void Simulation::addBody(vec3 position, vec3 velocity, PRECISION mass, PRECISION radius) {
 	if (numBodies < maxBodies) {
 		bodies[numBodies] = Body(position, velocity, mass, radius);
 		numBodies++;
 	}
 }
 
-void Simulation::stepSimulation(float dt) {
-	/*
-	if (currentStep == 0) {
-		step<<< 32 * numSMs, numThreads >>>(inBodies, resBodies, numBodies, 1.0);
-		gpuErrchk(cudaPeekAtLastError());
-		gpuErrchk(cudaDeviceSynchronize());
-		currentStep++;
-	}
-	else {
-		prepareForNextStep<<< 32*numSMs, numThreads >>>(inBodies, resBodies, numBodies);
-		step<<< 32*numSMs, numThreads >>>(inBodies, resBodies, numBodies, 1.0);
-		gpuErrchk(cudaPeekAtLastError());
-		gpuErrchk(cudaDeviceSynchronize());
-		currentStep++;
-	}*/
+void Simulation::stepSimulation(PRECISION dt) {
 
 	calc_forces<<< 32 * numSMs, numThreads >>>(inBodies, numBodies, 1.0, this->G);
 	gpuErrchk(cudaPeekAtLastError());
@@ -275,10 +211,6 @@ Body Simulation::getBody(int index) {
 
 void Simulation::cleanup() {
 	cudaFree(inBodies);
-
-	//delete[] bodies;
-	//delete[] resBodies;
-
 }
 
 void Simulation::enableFrameRecord(){
@@ -308,9 +240,9 @@ void Simulation::recordFrame(){
 	if(recordFile.is_open()){
 	for(int l = 0; l < maxBodies; l++){
 		Body b = this->getBody(l);
-		float px = b.position.x;
-		float py = b.position.y;
-		float pz = b.position.z;
+		PRECISION px = b.position.x;
+		PRECISION py = b.position.y;
+		PRECISION pz = b.position.z;
 		recordFile << l << " " << px << " " << py << " " << pz << " " << "\n";
 	}
 	}
@@ -323,7 +255,7 @@ int main(int argc, char** argv) {
 	int threads = 256;
 	int cycles = 1000;
 	bool record = false;
-	float g = 10;
+	PRECISION g = 10;
 
 	if(argc >= 4){
 	std::cout << "Starting simulation with " << atoi(argv[1]) << " bodies and " << atoi(argv[2]) << " threads" << std::endl;

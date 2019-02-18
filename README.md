@@ -8,7 +8,7 @@ If you're on Ubuntu, you can install these by using the commands:
 ```bash
 sudo apt-get update && sudo apt-get install nvidia-cuda-toolkit g++-6
 ```
-Once you have all the dependencies installed, ```cd``` to the project directory, and build the project by using:
+Once you have all the dependencies installed, build the project by using:
  ```bash
  ./build.sh
  ``` 
@@ -17,13 +17,19 @@ If everything is installed correctly, the build should finish, and the applicati
 ## Usage
 Currently, the program does not display any graphics. It will print some statistics about the program's execution into the terminal. Run the simulation with:
  ```bash 
- ./simulation <Number of bodies> <Number of CUDA threads> <Number of simulation cycles>
+ ./simulation <Number of Bodies> <Threads Per Block> <Number of Cycles> <Save Frames?>
  ```
 
-If no parameters are provided, the simulation starts with **1000** bodies, **256** cuda threads, and runs for **1000** simulation cycles.
+If no parameters are provided, the simulation starts with **1000** bodies, **256** threads per block, and runs for **1000** simulation cycles. Due to bandwith limitations, the simulation runs significantly slower when the frames are saved to the disk.
 
 An example:
 ```bash
-./simulation 2000 512 1000 # 2000 bodies with 512 cuda threads. Will run for 1000 simulation cycles.
+./simulation 2000 512 1000 # 2000 bodies with 512 threads per block. Will run for 1000 simulation cycles.
 ```
-Running the simulation with too many cuda threads will result in some threads crashing, and may give erroneous results.
+
+## Visualization
+In order to see the results of the simulation, a quick and dirty python program (```visualize.py```) is provided. This was written with python3 and the requirements can be installed with:
+```bash
+pip3 install -r requirements.txt
+```
+This program requires that you have some form of the glfw library installed.
